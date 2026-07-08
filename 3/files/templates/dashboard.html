@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Breach Monitor // Dashboard</title>
+<style>
+  :root {
+    --bg: #0a0e0a;
+    --panel: #0f1510;
+    --green: #39ff88;
+    --dim: #5c7f65;
+    --red: #ff4d4d;
+    --amber: #ffb347;
+    --border: #1c2b1f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: "Courier New", monospace;
+    margin: 0;
+    padding: 2rem;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+  }
+  header h1 { font-size: 1rem; letter-spacing: 2px; margin: 0; }
+  header h1::before { content: "$ "; color: var(--dim); }
+  a.logout { color: var(--red); text-decoration: none; font-size: 0.8rem; }
+  .grid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 2rem;
+  }
+  .left-col {
+    display: flex;
+    flex-direction: column;
+  }
+  .feed-line { margin-bottom: 0.3rem; white-space: pre-wrap; }
+  .feed-line.info { color: var(--dim); }
+  .feed-line.ok { color: var(--green); }
+  .feed-line.warn { color: var(--amber); }
+  .feed-line.error { color: var(--amber); }
+  .feed-line.breach { color: var(--red); font-weight: bold; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+  }
+  .panel h2 {
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    color: var(--dim);
+    margin: 0 0 1rem;
+  }
+  label { display: block; font-size: 0.75rem; color: var(--dim); margin-bottom: 0.3rem; }
+  input {
+    width: 100%;
+    background: #050705;
+    border: 1px solid var(--border);
+    color: var(--green);
+    padding: 0.6rem;
+    margin-bottom: 1rem;
+    font-family: inherit;
+  }
+  button {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+    padding: 0.6rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:hover { background: var(--green); color: #000; }
+  .risk {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 0.5rem 0;
+  }
+  .risk.Low { color: var(--green); }
+  .risk.Moderate { color: var(--amber); }
+  .risk.High { color: var(--amber); }
+  .risk.Critical { color: var(--red); }
+  .result-line { font-size: 0.85rem; margin: 0.3rem 0; color: var(--dim); }
+  .result-line b { color: var(--green); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--dim); font-weight: normal; }
+  .tag { padding: 0.1rem 0.5rem; border: 1px solid; font-size: 0.7rem; }
+  .tag.Low { color: var(--green); border-color: var(--green); }
+  .tag.Moderate, .tag.High { color: var(--amber); border-color: var(--amber); }
+  .tag.Critical { color: var(--red); border-color: var(--red); }
+</style>
+</head>
+<body>
+<header>
+  <h1>BREACH_MONITOR // {{ username }}</h1>
+  <a class="logout" href="{{ url_for('logout') }}">[logout]</a>
+</header>
+
+<div class="grid">
+  <div class="left-col">
+  <div class="panel">
+    <h2>RUN_CHECK</h2>
+    <form method="POST" action="{{ url_for('dashboardfun') }}" id="scan-form">
+      <label>target email</label>
+      <input type="email" name="email2" id="email2" placeholder="target@example.com" required>
+      <label>password to test</label>
+      <input type="password" name="password2" id="password2" placeholder="never stored in plaintext">
+      <button type="submit">scan &gt;</button>
+      <button type="button" id="start-monitoring-btn" style="margin-top:0.6rem; border-color: var(--amber); color: var(--amber);">
+        start monitoring (1 min) &gt;
+      </button>
+      <div id="start-monitoring-status" class="result-line" style="margin-top:0.5rem;"></div>
+    </form>
+  </div>
+
+  <div class="panel" style="margin-top:1.5rem;">
+    <h2>LIVE_FEED</h2>
+    <div id="live-feed" style="
+        background:#050705;
+        border:1px solid var(--border);
+        height:220px;
+        overflow-y:auto;
+        padding:0.6rem;
+        font-size:0.75rem;
+        line-height:1.5;
+      ">
+      <div class="result-line">// waiting for monitoring activity...</div>
+    </div>
+  </div>
+  </div>
+
+  <div class="panel">
+    <h2>RESULT</h2>
+    {% if result %}
+      <div class="risk {{ result.risk_level }}">{{ result.risk_score }}/100 — {{ result.risk_level }}</div>
+
+      {% if result.email_result %}
+        <div class="result-line">
+          email: <b>{{ result.email }}</b> —
+          {% if result.email_result.breached %}
+            breached in {{ result.email_result.count }} source(s)
+          {% elif result.email_result.breached == false %}
+            no breach found
+          {% else %}
+            check failed ({{ result.email_result.error }})
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if result.password_result %}
+        <div class="result-line">
+          password —
+          {% if result.password_result.breached %}
+            seen {{ result.password_result.count }} time(s) in known breaches
+          {% elif result.password_result.breached == false %}
+            not found in breach corpus
+          {% else %}
+            check failed ({{ result.password_result.error }})
+          {% endif %}
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="result-line">// run a scan to see results</div>
+    {% endif %}
+
+    <h2 style="margin-top:2rem;">CONTINUOUS_MONITORING</h2>
+    <form method="POST" action="{{ url_for('add_watch') }}" style="margin-bottom:1.5rem;">
+      <label>email to watch</label>
+      <input type="email" name="watch_email" placeholder="optional">
+      <label>password to watch</label>
+      <input type="password" name="watch_password" placeholder="optional, never stored">
+
+      <label>alert channels</label>
+      <div style="display:flex; gap:1rem; font-size:0.8rem; color: var(--dim); margin-bottom:0.8rem;">
+        <label style="display:flex; align-items:center; gap:0.3rem; margin:0;">
+          <input type="checkbox" name="channels" value="email" style="width:auto; margin:0;"> email
+        </label>
+        <label style="display:flex; align-items:center; gap:0.3rem; margin:0;">
+          <input type="checkbox" name="channels" value="telegram" style="width:auto; margin:0;"> telegram
+        </label>
+        <label style="display:flex; align-items:center; gap:0.3rem; margin:0;">
+          <input type="checkbox" name="channels" value="whatsapp" style="width:auto; margin:0;"> whatsapp
+        </label>
+      </div>
+
+      <label>notify email</label>
+      <input type="email" name="notify_email" placeholder="where to send email alerts">
+      <label>telegram chat id</label>
+      <input type="text" name="telegram_chat_id" placeholder="e.g. 123456789">
+      <label>whatsapp number</label>
+      <input type="text" name="whatsapp_number" placeholder="+91xxxxxxxxxx">
+
+      <button type="submit">add to watchlist &gt;</button>
+    </form>
+
+    <table>
+      <tr>
+        <th>target</th>
+        <th>channels</th>
+        <th>last checked</th>
+        <th></th>
+      </tr>
+      {% for row in watchlist %}
+      <tr>
+        <td>{{ row["target_email"] or "(password only)" }}</td>
+        <td>{{ row["channels"] }}</td>
+        <td>{{ row["last_checked"] or "pending" }}</td>
+        <td>
+          <form method="POST" action="{{ url_for('delete_watch', watch_id=row['id']) }}" style="margin:0;">
+            <button type="submit" style="width:auto; padding:0.2rem 0.6rem; border-color: var(--red); color: var(--red);">remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">// nothing being watched yet</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2 style="margin-top:2rem;">HISTORY</h2>
+    <table>
+      <tr>
+        <th>time (UTC)</th>
+        <th>email</th>
+        <th>risk</th>
+      </tr>
+      {% for row in history %}
+      <tr>
+        <td>{{ row["checked_at"] }}</td>
+        <td>{{ row["target_email"] }}</td>
+        <td><span class="tag {{ row['risk_level'] }}">{{ row["risk_level"] }} ({{ row["risk_score"] }})</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">// no scans yet</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<script>
+  const startBtn = document.getElementById("start-monitoring-btn");
+  const statusDiv = document.getElementById("start-monitoring-status");
+  const feedDiv = document.getElementById("live-feed");
+
+  startBtn.addEventListener("click", async () => {
+    const email = document.getElementById("email2").value.trim();
+    const password = document.getElementById("password2").value;
+
+    if (!email && !password) {
+      statusDiv.textContent = "// enter an email or password first";
+      return;
+    }
+
+    startBtn.disabled = true;
+    statusDiv.textContent = "// starting monitor...";
+
+    try {
+      const resp = await fetch("{{ url_for('start_monitoring') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        statusDiv.textContent = `// monitoring started (watch #${data.watch_id}) — checking every 1 min`;
+      } else {
+        statusDiv.textContent = `// error: ${data.error || "could not start monitoring"}`;
+      }
+    } catch (err) {
+      statusDiv.textContent = "// error contacting server";
+    } finally {
+      startBtn.disabled = false;
+    }
+  });
+
+  function appendFeedLine(level, message, time) {
+    // clear the placeholder line on first real entry
+    const placeholder = feedDiv.querySelector(".result-line");
+    if (placeholder) placeholder.remove();
+
+    const line = document.createElement("div");
+    line.className = `feed-line ${level}`;
+    line.textContent = `[${time || ""}] ${message}`;
+    feedDiv.appendChild(line);
+    feedDiv.scrollTop = feedDiv.scrollHeight;
+  }
+
+  const source = new EventSource("{{ url_for('stream_logs') }}");
+  source.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      appendFeedLine(data.level, data.message, data.time);
+    } catch (e) {
+      console.error("Bad feed event", e);
+    }
+  };
+  source.onerror = () => {
+    // EventSource auto-reconnects on its own; nothing to do here.
+  };
+</script>
+</body>
+</html>
